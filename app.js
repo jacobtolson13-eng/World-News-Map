@@ -163,7 +163,10 @@
   // Base map: bundled country shapes (Natural Earth), so the map always works with no tile service or key.
   const dark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
   map.getContainer().style.background = dark ? "#0f1a24" : "#cfe3f0"; // ocean
+  // Draw the shapes in a pane *below* the tile layer, so street tiles fully replace them when zoomed in.
+  map.createPane("base").style.zIndex = 150;
   L.geoJSON(window.WORLD_GEOJSON, {
+    pane: "base",
     style: { color: dark ? "#3a4654" : "#9aa8b5", weight: 0.8, fillColor: dark ? "#25303b" : "#f4f1ea", fillOpacity: 1 },
     onEachFeature: (f, layer) => layer.bindTooltip(f.properties.n, { sticky: true, direction: "top", opacity: 0.85 }),
   }).addTo(map);
@@ -171,7 +174,7 @@
   // They appear above the country shapes when zoomed in; if they fail to load the shapes stay visible.
   if (location.protocol === "https:") {
     const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, minZoom: 5, opacity: dark ? 0.85 : 1,
+      maxZoom: 19, minZoom: 5, className: dark ? "tiles-dark" : "",
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     });
     let errors = 0;
