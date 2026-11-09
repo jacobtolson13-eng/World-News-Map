@@ -1,63 +1,62 @@
-// Pulls the last 24 hours of news from the GDELT DOC 2.0 API (free, no key) and writes data/articles.js.
+// Pulls the last 24 hours of news from outlets' public RSS/Atom feeds (data/feeds.js) and writes data/articles.js.
 // Run by .github/workflows/update-news.yml every 15 minutes. Node 20+, no dependencies.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import vm from "node:vm";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const OUT = ROOT + "data/articles.js";
-const GDELT = "https://api.gdeltproject.org/api/v2/doc/doc";
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const load = f => { const c = { window: {} }; vm.runInNewContext(readFileSync(ROOT + f, "utf8"), c); return c.window; };
+const FEEDS = load("data/feeds.js").FEEDS;
 
-// Read the outlet table so every rated outlet is queried.
-const ctx = { window: {} };
-vm.runInNewContext(readFileSync(ROOT + "data/sources.js", "utf8"), ctx);
-const domains = Object.keys(ctx.window.SOURCES);
+const ENT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+const decode = s => s.replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e) =>
+  e[0] === "#" ? String.fromCodePoint(e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : +e.slice(1)) : (ENT[e.toLowerCase()] ?? m));
+const clean = s => decode(decode((s || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")).replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+const tag = (xml, names) => { for (const n of names) { const m = new RegExp(`<${n}(?:\\s[^>]*)?>([\\s\\S]*?)</${n}>`, "i").exec(xml); if (m) return m[1]; } return ""; };
 
-const queries = [];
-for (let i = 0; i < domains.length; i += 12) queries.push("(" + domains.slice(i, i + 12).map(d => "domainis:" + d).join(" OR ") + ")");
-// Broad worldwide queries so outlets not yet rated also show up.
-for (const q of ["(election OR protest OR government)", "(war OR military OR ceasefire)", "(economy OR inflation OR markets)",
-                 "(climate OR earthquake OR flood OR wildfire)", "(health OR outbreak OR vaccine)", "(technology OR science)"])
-  queries.push(q + " sourcelang:english");
+function parseFeed(xml) {
+  const items = xml.match(/<(item|entry)[\s>][\s\S]*?<\/\1>/gi) || [];
+  return items.map(it => {
+    let link = clean(tag(it, ["link"]));
+    if (!link) { const m = /<link[^>]*href="([^"]+)"/i.exec(it); link = m ? decode(m[1]) : ""; }
+    if (!link) link = clean(tag(it, ["guid", "id"]));
+    const when = new Date(clean(tag(it, ["pubDate", "published", "updated", "dc:date"])));
+    return { title: clean(tag(it, ["title"])), url: link, time: isNaN(when) ? Date.now() : when.getTime(),
+             summary: clean(tag(it, ["description", "summary", "content:encoded", "content"])).slice(0, 300) };
+  }).filter(a => a.title && /^https?:\/\//.test(a.url));
+}
 
-async function gdelt(query, max) {
-  const u = `${GDELT}?query=${encodeURIComponent(query)}&mode=artlist&format=json&maxrecords=${max}&timespan=1d&sort=datedesc`;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await fetch(u, { headers: { "User-Agent": "world-news-map (GitHub Actions)" }, signal: AbortSignal.timeout(45000) });
-      const txt = await res.text();
-      try { return JSON.parse(txt).articles || []; }
-      catch { console.warn(`Query failed (attempt ${attempt + 1}): ${txt.slice(0, 120)}`); }
-    } catch (e) { console.warn(`Network error (attempt ${attempt + 1}): ${e.message}`); }
-    await sleep(10000);
-  }
-  return [];
+const gdeltDate = t => new Date(t).toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+
+async function getFeed(url) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000), redirect: "follow",
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; world-news-map/1.0; +https://github.com/jacobtolson13-eng/World-News-Map)", "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" } });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return parseFeed(await res.text());
 }
 
 // Start from the previous feed so a failed run never empties the map.
 let prev = [];
-if (existsSync(OUT)) {
-  const c = { window: {} };
-  try { vm.runInNewContext(readFileSync(OUT, "utf8"), c); prev = c.window.NEWS_FEED?.articles || []; } catch {}
-}
+if (existsSync(OUT)) { try { prev = load("data/articles.js").NEWS_FEED?.articles || []; } catch {} }
 const byUrl = new Map(prev.map(a => [a.url, a]));
-let fetched = 0;
-for (const [i, q] of queries.entries()) {
-  const rows = await gdelt(q, 250);
-  fetched += rows.length;
-  for (const r of rows) {
-    if (!r.url || !r.title) continue;
-    byUrl.set(r.url, { url: r.url, title: r.title, domain: r.domain, seendate: r.seendate, sourcecountry: r.sourcecountry, language: r.language });
-  }
-  console.log(`${i + 1}/${queries.length}: ${rows.length} rows`);
-  if (i < queries.length - 1) await sleep(6000); // GDELT: max one request per 5 seconds
-}
 
-const cutoff = Date.now() - 24 * 3600 * 1000;
+let okFeeds = 0;
+const jobs = Object.entries(FEEDS).flatMap(([domain, urls]) => urls.map(u => [domain, u]));
+await Promise.all(jobs.map(async ([domain, u]) => {
+  try {
+    const rows = await getFeed(u);
+    okFeeds++;
+    for (const r of rows) byUrl.set(r.url, { url: r.url, title: r.title, summary: r.summary, domain, seendate: gdeltDate(r.time) });
+    console.log(`ok   ${domain}: ${rows.length}`);
+  } catch (e) { console.log(`FAIL ${domain}: ${e.message}`); }
+}));
+
 const toTime = s => { const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(s || ""); return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : 0; };
-const articles = [...byUrl.values()].filter(a => toTime(a.seendate) >= cutoff).sort((a, b) => toTime(b.seendate) - toTime(a.seendate)).slice(0, 3000);
+const cutoff = Date.now() - 24 * 3600 * 1000;
+const articles = [...byUrl.values()].filter(a => toTime(a.seendate) >= cutoff)
+  .sort((a, b) => toTime(b.seendate) - toTime(a.seendate)).slice(0, 3000);
 
-if (!fetched && prev.length) { console.log("No new rows; keeping previous feed."); process.exit(0); }
+if (!okFeeds) { console.log("No feeds reachable; keeping previous file."); process.exit(0); }
 writeFileSync(OUT, "// Generated by scripts/fetch-news.mjs. Do not edit by hand.\nwindow.NEWS_FEED = " +
   JSON.stringify({ updated: new Date().toISOString(), articles }) + ";\n");
-console.log(`Wrote ${articles.length} articles.`);
+console.log(`${okFeeds}/${jobs.length} feeds ok. Wrote ${articles.length} articles.`);

@@ -86,10 +86,11 @@
     }
     return null;
   }
-  function makeArticle({ url, title, domain, seendate, sourcecountry, language, demo }) {
+  function makeArticle({ url, title, summary, domain, seendate, sourcecountry, language, demo }) {
     const dom = domainOf(domain || url);
     const src = findSource(dom);
-    const loc = locate(title, sourcecountry);
+    // Look for the story's place in the headline first, then in the feed's summary.
+    const loc = locate(title, sourcecountry) || (summary ? locate(summary, sourcecountry) : null);
     let lat, lng, placeLabel, placeExact = true;
     if (loc) { lat = loc.best.lat; lng = loc.best.lng; placeLabel = loc.best.name; }
     else if (src) { lat = src.lat; lng = src.lng; placeLabel = src.city + " (outlet location; story place not detected)"; placeExact = false; }
@@ -108,7 +109,8 @@
       outletCountry: sourcecountry || (src ? src.city : ""),
       lean: leanKeyFor(src),
       audience: src ? src.audience : "Not yet rated",
-      tags: tagsFor(title),
+      tags: tagsFor(title + " " + (summary || "")),
+      summary: summary || "",
       lat: lat + j(), lng: lng + j(), placeLabel, placeExact,
       mentions: loc ? loc.all : [],
     };
