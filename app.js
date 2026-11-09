@@ -141,6 +141,7 @@
     hideNotice();
     const feed = await loadFeedScript();
     const rows = feed && Array.isArray(feed.articles) ? feed.articles : [];
+    frameable = (feed && feed.frameable) || {};
     const words = topic.toLowerCase().split(/\s+/).filter(Boolean);
     const seen = new Set();
     articles = [];
@@ -272,7 +273,7 @@
       const card = el("div", { class: "card" });
       card.innerHTML = articleHtml(a);
       card.onclick = e => {
-        if (e.target.tagName === "A") return;
+        if (e.target.closest("a")) return;
         cluster.zoomToShowLayer(a.marker, () => a.marker.openPopup());
       };
       list.appendChild(card);
@@ -282,7 +283,7 @@
   function articleHtml(a) {
     const lean = LEAN_BY_KEY[a.lean];
     const when = a.date ? timeAgo(a.date) : "";
-    const link = a.demo ? `<span style="font-weight:600">${esc(a.title)}</span>` : `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>`;
+    const link = a.demo ? `<span style="font-weight:600">${esc(a.title)}</span>` : `<a href="${esc(a.url)}" data-read="${esc(a.url)}">${esc(a.title)}</a>`;
     return `${link}
       <div class="meta"><span class="badge" style="background:${lean.hex}">${lean.label}</span> ${esc(a.outletName)}${when ? " · " + when : ""}</div>
       <div class="meta">📍 ${esc(a.placeLabel)}</div>
@@ -295,16 +296,58 @@
       ? `<div class="src-detail"><b>About ${esc(s.name)}</b><br>Based in ${esc(s.city)} · ${esc(s.funding)}<br>Rating basis: ${esc(s.basis)}</div>`
       : `<div class="src-detail"><b>${esc(a.domain)}</b> is not in the ratings table yet.</div>`;
     const mentions = a.mentions.length > 1 ? `<div class="src-detail">Places mentioned: ${a.mentions.map(esc).join(", ")}</div>` : "";
-    return `<h3>${a.demo ? esc(a.title) : `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>`}</h3>${articleHtml(a).replace(/^[\s\S]*?<\/(a|span)>/, "")}${mentions}${srcInfo}`;
+    return `<h3>${a.demo ? esc(a.title) : `<a href="${esc(a.url)}" data-read="${esc(a.url)}">${esc(a.title)}</a>`}</h3>${articleHtml(a).replace(/^[\s\S]*?<\/(a|span)>/, "")}${mentions}${srcInfo}`;
   }
 
   // ---------- Helpers ----------
   function el(tag, attrs = {}, text) { const e = document.createElement(tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; }
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-  function timeAgo(d) { const m = Math.round((Date.now() - d) / 60000); return m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago"; }
+  function timeAgo(d) { const m = Math.max(0, Math.round((Date.now() - d) / 60000)); return m < 1 ? "just now" : m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago"; }
   function setStatus(t) { document.getElementById("status").textContent = t; }
   function showNotice(t) { const n = document.getElementById("notice"); n.textContent = t; n.hidden = false; }
   function hideNotice() { document.getElementById("notice").hidden = true; }
+
+  // ---------- Reader window ----------
+  let frameable = {};
+  const reader = document.getElementById("reader");
+  function openReader(a) {
+    const lean = LEAN_BY_KEY[a.lean];
+    document.getElementById("readerTitle").textContent = a.title;
+    document.getElementById("readerMeta").innerHTML =
+      `<span class="badge" style="background:${lean.hex}">${lean.label}</span> ${esc(a.outletName)}${a.date ? " · " + timeAgo(a.date) : ""} · 📍 ${esc(a.placeLabel)}`;
+    const open = document.getElementById("readerOpen");
+    open.href = a.url;
+    open.textContent = "Open on " + a.outletName.replace(/^The /, "") + " ↗";
+    const body = document.getElementById("readerBody");
+    body.innerHTML = "";
+    if (frameable[a.domain]) {
+      const f = document.createElement("iframe");
+      f.src = a.url; f.title = a.title; f.loading = "eager";
+      f.referrerPolicy = "no-referrer-when-downgrade";
+      body.appendChild(f);
+    } else {
+      body.innerHTML = `<div class="reader-text">
+        <p>${a.summary ? esc(a.summary) : "No summary was provided for this article."}</p>
+        <div class="tags">${a.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+        <p class="note">${esc(a.outletName)} doesn't allow its articles to be shown inside other websites, so only the summary is shown here.
+        Use the "Open on ${esc(a.outletName.replace(/^The /, ""))}" button above to read the full article.</p></div>`;
+    }
+    reader.hidden = false;
+    document.getElementById("readerClose").focus();
+  }
+  function closeReader() { reader.hidden = true; document.getElementById("readerBody").innerHTML = ""; }
+  document.getElementById("readerClose").onclick = closeReader;
+  reader.addEventListener("click", e => { if (e.target === reader) closeReader(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !reader.hidden) closeReader(); });
+  // Any article link (sidebar list or map popup) opens the reader.
+  document.addEventListener("click", e => {
+    const link = e.target.closest("a[data-read]");
+    if (!link || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const a = articles.find(x => x.url === link.dataset.read);
+    if (!a) return;
+    e.preventDefault();
+    openReader(a);
+  });
 
   document.getElementById("search").addEventListener("submit", e => { e.preventDefault(); load(document.getElementById("q").value.trim()); });
   render();

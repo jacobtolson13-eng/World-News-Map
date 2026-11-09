@@ -21,7 +21,7 @@ function parseFeed(xml) {
     if (!link) { const m = /<link[^>]*href="([^"]+)"/i.exec(it); link = m ? decode(m[1]) : ""; }
     if (!link) link = clean(tag(it, ["guid", "id"]));
     const when = new Date(clean(tag(it, ["pubDate", "published", "updated", "dc:date"])));
-    return { title: clean(tag(it, ["title"])), url: link, time: isNaN(when) ? Date.now() : when.getTime(),
+    return { title: clean(tag(it, ["title"])), url: link, time: isNaN(when) ? Date.now() : Math.min(when.getTime(), Date.now()),
              summary: clean(tag(it, ["description", "summary", "content:encoded", "content"])).slice(0, 300) };
   }).filter(a => a.title && /^https?:\/\//.test(a.url));
 }
