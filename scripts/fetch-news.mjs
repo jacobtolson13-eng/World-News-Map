@@ -24,7 +24,7 @@ async function gdelt(query, max) {
   const u = `${GDELT}?query=${encodeURIComponent(query)}&mode=artlist&format=json&maxrecords=${max}&timespan=1d&sort=datedesc`;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await fetch(u, { headers: { "User-Agent": "world-news-map (GitHub Actions)" } });
+      const res = await fetch(u, { headers: { "User-Agent": "world-news-map (GitHub Actions)" }, signal: AbortSignal.timeout(45000) });
       const txt = await res.text();
       try { return JSON.parse(txt).articles || []; }
       catch { console.warn(`Query failed (attempt ${attempt + 1}): ${txt.slice(0, 120)}`); }

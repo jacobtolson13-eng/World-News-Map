@@ -159,12 +159,26 @@
   }
 
   // ---------- Map ----------
-  const map = L.map("map", { worldCopyJump: true, minZoom: 2 }).setView([25, 10], 2);
+  const map = L.map("map", { worldCopyJump: true, minZoom: 2, maxZoom: 18 }).setView([25, 10], 2);
+  // Base map: bundled country shapes (Natural Earth), so the map always works with no tile service or key.
   const dark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
-  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
-    maxZoom: 19, subdomains: "abcd",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  map.getContainer().style.background = dark ? "#0f1a24" : "#cfe3f0"; // ocean
+  L.geoJSON(window.WORLD_GEOJSON, {
+    style: { color: dark ? "#3a4654" : "#9aa8b5", weight: 0.8, fillColor: dark ? "#25303b" : "#f4f1ea", fillOpacity: 1 },
+    onEachFeature: (f, layer) => layer.bindTooltip(f.properties.n, { sticky: true, direction: "top", opacity: 0.85 }),
   }).addTo(map);
+  // Street-level detail: OpenStreetMap tiles, only when served from a real website (OSM blocks local files).
+  // They appear above the country shapes when zoomed in; if they fail to load the shapes stay visible.
+  if (location.protocol === "https:") {
+    const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, minZoom: 5, opacity: dark ? 0.85 : 1,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    });
+    let errors = 0;
+    osm.on("tileerror", () => { if (++errors > 6 && map.hasLayer(osm)) map.removeLayer(osm); });
+    osm.addTo(map);
+  }
+  map.attributionControl.addAttribution("Country shapes: Natural Earth");
 
   const cluster = L.markerClusterGroup({
     showCoverageOnHover: false, maxClusterRadius: 45, spiderfyOnMaxZoom: true,
