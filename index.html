@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World News Map</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="vendor/MarkerCluster.css">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5f6b7a; --border: #dde2e8; --accent: #2d5bd7;
+    --l2: #1f4fa8; --l1: #5b8fe0; --c0: #7c6fb0; --r1: #e0796b; --r2: #b8322a; --state: #b7791f; --unrated: #9aa3ad;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #12151a; --panel: #1b2027; --text: #e7eaee; --muted: #9aa5b1; --border: #2c333d; --accent: #7aa2ff; }
+  }
+  :root[data-theme="dark"] { --bg: #12151a; --panel: #1b2027; --text: #e7eaee; --muted: #9aa5b1; --border: #2c333d; --accent: #7aa2ff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; white-space: nowrap; }
+  header form { display: flex; gap: 6px; flex: 1; min-width: 220px; }
+  header input { flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  button { padding: 7px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #status { font-size: 12px; color: var(--muted); }
+  main { display: flex; height: calc(100% - 58px); }
+  #map { flex: 1; min-height: 300px; }
+  aside { width: 380px; max-width: 100%; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--panel); }
+  .section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+  .leanbar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: var(--border); }
+  .leanbar span { display: block; height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; cursor: pointer; background: var(--bg); color: var(--text); }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #list { overflow-y: auto; flex: 1; }
+  .card { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .card:hover { background: var(--bg); }
+  .card a { color: var(--text); text-decoration: none; font-weight: 600; }
+  .card a:hover { text-decoration: underline; }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; }
+  .tags { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); }
+  .notice { padding: 8px 14px; font-size: 12px; background: #fff4d6; color: #5c4400; border-bottom: 1px solid #f0d68a; }
+  .pin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+  .cluster { display: flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-weight: 700; font-size: 12px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); text-shadow: 0 0 3px rgba(0,0,0,.7); }
+  .leaflet-popup-content { font-size: 13px; min-width: 220px; }
+  .leaflet-popup-content h3 { font-size: 14px; margin: 0 0 6px; }
+  .src-detail { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  @media (max-width: 760px) {
+    main { flex-direction: column; height: auto; }
+    #map { height: 55vh; flex: none; }
+    aside { width: 100%; border-left: 0; border-top: 1px solid var(--border); }
+    #list { max-height: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌍 World News Map</h1>
+  <form id="search">
+    <input id="q" type="search" placeholder="Filter by topic (e.g. climate, election)">
+    <button class="primary" type="submit">Search</button>
+  </form>
+  <span id="status">Loading…</span>
+</header>
+<main>
+  <div id="map"></div>
+  <aside>
+    <div id="notice" class="notice" hidden></div>
+    <div class="section">
+      <h2>Coverage lean in current map view</h2>
+      <div id="leanbar" class="leanbar"></div>
+      <div id="legend" class="legend"></div>
+    </div>
+    <div class="section">
+      <h2>Filter by lean</h2>
+      <div id="leanFilters" class="chips"></div>
+    </div>
+    <div class="section">
+      <h2>Filter by topic</h2>
+      <div id="tagFilters" class="chips"></div>
+    </div>
+    <div id="list"></div>
+  </aside>
+</main>
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/leaflet.markercluster.js"></script>
+<script src="data/sources.js"></script>
+<script src="data/places.js"></script>
+<script src="data/sample.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

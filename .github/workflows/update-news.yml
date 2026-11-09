@@ -1,0 +1,26 @@
+name: Update news feed
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # GitHub may run scheduled jobs a few minutes late
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: update-news
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/fetch-news.mjs
+      - name: Commit feed if it changed
+        run: |
+          git config user.name "news-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/articles.js
+          git diff --cached --quiet || (git commit -m "Update news feed" && git push)
