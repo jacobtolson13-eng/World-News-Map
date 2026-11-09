@@ -171,10 +171,10 @@
     onEachFeature: (f, layer) => layer.bindTooltip(f.properties.n, { sticky: true, direction: "top", opacity: 0.85 }),
   }).addTo(map);
   // Street-level detail: OpenStreetMap tiles, only when served from a real website (OSM blocks local files).
-  // They appear above the country shapes when zoomed in; if they fail to load the shapes stay visible.
+  // They cover the country shapes at every zoom; if they fail to load, the shapes stay visible underneath.
   if (location.protocol === "https:") {
     const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, minZoom: 5, className: dark ? "tiles-dark" : "",
+      maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     });
     let errors = 0;

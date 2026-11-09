@@ -13,4 +13,4 @@ Open `index.html` in a browser (Chrome, Edge, Firefox, Safari). No install neede
 ## Hosting (GitHub Pages)
 - `.github/workflows/update-news.yml` runs every 15 minutes, calls `scripts/fetch-news.mjs`, and commits `data/articles.js`.
 - GitHub Pages serves the site from the `main` branch root. Each feed commit redeploys it.
-- Map: bundled Natural Earth country shapes (`data/world.js`, no key needed) plus OpenStreetMap tiles at zoom 5+ when served over https.
+- Map: bundled Natural Earth country shapes (`data/world.js`, no key needed) as a fallback under OpenStreetMap tiles (used when served over https).
